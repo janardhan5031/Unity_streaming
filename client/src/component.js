@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import SimplePeer from "simple-peer";
+import ReactPlayer from "react-player";
 
 export default function PeerConnection() {
   const socketRef = useRef();
   const peerRef = useRef();
-  const userVideoRef = useRef();
-  const partnerVideoRef = useRef();
+  const [userVideo, setUserVideo] = useState(null)
+  const [partnerVideo, setPartnerVideo] = useState(null)
+
 
   // const [partnerVideoRef, setPartnerVideoRef] = useState(undefined);
   const [remoteConnections, setRemoteConnections] = useState([]);
@@ -19,13 +21,11 @@ export default function PeerConnection() {
         video: true,
         audio: true,
       });
-      userVideoRef.current.srcObject = stream;
+      setUserVideo(stream)
 
       const peer = new SimplePeer({ initiator: true, stream, trickle: false });
       console.log(peer);
       peerRef.current = peer;
-
-      let userId;
 
       peer.on("signal", (data) => {
         console.log("===> signal data", data);
@@ -46,14 +46,20 @@ export default function PeerConnection() {
       // gettting stream from signaling server
       peer.on("stream", (stream) => {
         console.log("===> stream", stream);
-        // setPartnerVideoRef(stream);
-        // partnerVideoRef['list'] =[{'current.srcObject':stream}]
-        partnerVideoRef.current.srcObject = stream;
-        // setRemoteConnections((prev)=> prev.push({id:}))
+        socketRef.current.emit('streamId',stream.id)
+        setPartnerVideo(stream);
       });
 
-      socketRef.current.on("removeIceCandidate", (candidate) => {
-        console.log(candidate, "===>remove iceCandidate");
+      socketRef.current.on("removeIceCandidate", (streamId) => {
+        console.log(streamId, "===>remove iceCandidate");
+        setPartnerVideo((stream) => {
+          if (stream && stream.id === streamId) {
+            stream.getTracks().forEach((track) => {
+              peer.removeTrack(track, stream);
+            });
+            return null;
+          }
+        });
       });
 
       peer.on("error", (error) => {
@@ -67,29 +73,22 @@ export default function PeerConnection() {
     initWebRTC();
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
-      peerRef.current.destroy()
+      peerRef.current.destroy();
     };
   }, []);
 
-  function endCall(e){
-    e.preventDefault();
-    partnerVideoRef.current = null
-    // peerRef.current.on('close',()=>{
-    // })
-  }
 
-  console.log(partnerVideoRef, "===> video stream");
+  console.log(partnerVideo)
+
   return (
     <div>
-      <button onClick={endCall}> END</button>
-      <video ref={userVideoRef} autoPlay muted />
-      {/* {partnerVideoRef && (
-        <video>
-          <source ref={partnerVideoRef} type="video/mp4" />
-        </video>
-      )} */}
-      {/* <video src={partnerVideoRef} autoPlay /> */}
-      { partnerVideoRef&& <video ref={partnerVideoRef} autoPlay />}
+      {/* <button onClick={endCall}> END</button> */}
+      {userVideo && (
+        <ReactPlayer playing muted url={userVideo} />
+      )}
+      {partnerVideo && (
+        <ReactPlayer playing muted url={partnerVideo} />
+      )}
     </div>
   );
 }

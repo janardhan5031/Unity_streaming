@@ -44,17 +44,23 @@ const io = socket_io(server, {
 
 const room1 = io.of("/p2e");
 
-const users = {};
+const offers = {};
 
 room1.on("connection", (socket) => {
   console.log('client connected ==> ',socket.id);
+  socket.send('socketId',socket.id)
   
   socket.on('offer',offer=>{
-    // console.log(offer,'===> offer')
-    users[socket.id]=offer
     // console.log(users)
-    socket.broadcast.emit('iceCandidate',{id:socket.id, offer})
+    offers[socket.id] = offer;
+    socket.broadcast.emit('iceCandidate',offer)
 
+  })
+
+  socket.on('streamId',(streamId)=>{
+    if(!streams[socket.id]){
+      streams[socket.id ] = streamId;
+    }
   })
 
  
@@ -62,9 +68,9 @@ room1.on("connection", (socket) => {
   // on disconnect from server
   socket.on("disconnect", () => {
     console.log(`client disconnected ===>` ,socket.id)
-    console.log(users[socket.id])
-    socket.broadcast.emit('removeIceCandidate',socket.id)
-    delete users[socket.id]
+    delete offers[socket.id]
+    socket.broadcast.emit('iceCandidatesList',offers)
+ 
   });
 
 
