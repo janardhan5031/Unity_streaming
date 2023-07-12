@@ -3,6 +3,7 @@ import logo from './logo.svg';
 import './App.css';
 import PeerConnection from './component';
 import Connection from './components/Connection';
+import PeerToPeer from './components/webrtc';
 
 class App extends Component {
   render() {
@@ -16,7 +17,8 @@ class App extends Component {
           To get started, edit <code>src/App.js</code> and save to reload.
         </p>
         {/* <PeerConnection /> */}
-        <Connection />
+        {/* <Connection /> */}
+        <PeerToPeer />
       </div>
     );
   }

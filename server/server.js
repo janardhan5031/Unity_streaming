@@ -1,12 +1,36 @@
 const express = require("express");
-const http = require("http");
-const app = express();
-const server = http.createServer(app);
 const socket_io = require("socket.io");
+const cors = require("cors");
+const SimplePeer = require("simple-peer");
 
-const users = {};
+const app = express();
 
-const socketToRoom = {};
+// cors.CorsOptions ={
+//   origin:['*'],
+// }
+
+// app.use((req, res, next) => {
+//   res.setHeader("Access-Control-Allow-Origin", "*");
+//   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
+//   res.header(
+//     "Access-Control-Allow-Headers: Origin, Content-Type, X-Auth-Token"
+//   );
+//   next();
+// });
+// app.use(cors({ origin: "*", credentials: true }));
+
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: false })); // to parse the data from form
+
+app.get("/", (req, res) => {
+  res.send("Hello world");
+});
+
+let server = require("http").Server(app);
+server.listen(4000, (err) => {
+  console.log("server is running at port 4000");
+});
 
 const io = socket_io(server, {
   cors: {
@@ -18,45 +42,38 @@ const io = socket_io(server, {
   pingTimeout: 2000,
 });
 
-io.on('connection', socket => {
-    socket.on("join room", roomID => {
-        if (users[roomID]) {
-            const length = users[roomID].length;
-            if (length === 4) {
-                socket.emit("room full");
-                return;
-            }
-            users[roomID].push(socket.id);
-        } else {
-            users[roomID] = [socket.id];
-        }
-        socketToRoom[socket.id] = roomID;
-        const usersInThisRoom = users[roomID].filter(id => id !== socket.id);
+const room1 = io.of("/p2e");
 
-        socket.emit("all users", usersInThisRoom);
-    });
+const offers = {};
 
-    socket.on("sending signal", payload => {
-        io.to(payload.userToSignal).emit('user joined', { signal: payload.signal, callerID: payload.callerID });
-    });
+room1.on("connection", (socket) => {
+  console.log("client connected ==> ", socket.id);
+  socket.send("socketId", socket.id);
 
-    socket.on("returning signal", payload => {
-        io.to(payload.callerID).emit('receiving returned signal', { signal: payload.signal, id: socket.id });
-    });
+  // recieving offer from peer connection
+  socket.on("sending offer", (payload) => {
+    console.log("offer received from " + socket.id);
 
-    socket.on('disconnect', () => {
-      console.log('socket disconnected', socket.id)
-        const roomID = socketToRoom[socket.id];
-        let room = users[roomID];
-        if (room) {
-            room = room.filter(id => id !== socket.id);
-            users[roomID] = room;
-        }
-        socket.broadcast.emit('disconnect peer', socket.id)
-    });
+    // sending offer to all connected peer to negotiate connection
+    socket.broadcast.emit("recieving offer", { ...payload, userToPeer: socket.id });
+  });
 
+  socket.on("sending answer", (payload) => {
+    console.log("answer received answer received", socket.id);
+
+    // sending answer to all connected peer to negotiate connection
+    socket.broadcast.emit('recieving answer', payload);
+  });
+
+  socket.on("iceCandidate", (payload) => {
+    console.log('recieved iceCandidate from '+socket.id) 
+    socket.broadcast.emit('recieved iceCandidate',payload)
+  });
+
+  // on disconnect from server
+  socket.on("disconnect", () => {
+    console.log(`client disconnected ===>`, socket.id);
+    delete offers[socket.id];
+    socket.broadcast.emit("iceCandidatesList", offers);
+  });
 });
-
-server.listen( 8000, () => console.log('server is running on port 8000'));
-
-
