@@ -48,7 +48,6 @@ const offers = {};
 
 room1.on("connection", (socket) => {
   console.log('client connected ==> ',socket.id);
-  socket.send('socketId',socket.id)
   
   socket.on('offer',offer=>{
     // console.log(users)
@@ -69,7 +68,7 @@ room1.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log(`client disconnected ===>` ,socket.id)
     delete offers[socket.id]
-    socket.broadcast.emit('iceCandidatesList',offers)
+    socket.broadcast.emit('candidate disconnected',offers)
  
   });
 

@@ -5,17 +5,16 @@ import { io } from "socket.io-client";
 
 const Connection = () => {
   const [mystream, setMyStream] = useState(null);
-  const [remoteStream, setremoteStream] = useState(null);
+  const [remoteStreams, setremoteStreams] = useState([]);
   const [peer, setPeer] = useState(null);
   const [socket, setSocket] = useState(null);
-  const [socketId, setSocketId] = useState(null);
   const [reConnect, setReConnect] = useState(false);
 
   const socketConnection = () => {
     const connection = io("http://localhost:4000/p2e");
     // connect to socket server
     connection.on("connect", () => {
-      console.log("client connected to socket server");
+      console.log("client connected to socket server", connection.id);
     });
 
     connection.on("disconnect", () => {
@@ -23,6 +22,7 @@ const Connection = () => {
       setReConnect(true);
     });
 
+    console.log(connection);
     setSocket(connection);
     return connection;
   };
@@ -39,22 +39,23 @@ const Connection = () => {
         stream,
         trickle: false,
       });
- 
 
       // console.log(peer,'====> peer conneciton =====');
       // peer.destroyed=true;
       // console.log(peer,'====> peer conneciton =====');
 
-
       peer.on("signal", (offer) => {
-        console.log(offer);
-        console.log(socket);
         socket.emit("offer", offer);
       });
 
+      
       peer.on("stream", (stream) => {
         console.log(stream);
-        setremoteStream(stream);
+        console.log(peer,'sjdflkjl');
+        setremoteStreams((oldStreams) => {
+          console.log(oldStreams,'OLD Stream');
+          return [...oldStreams,stream]
+        });
       });
 
       peer.on("close", () => {
@@ -63,7 +64,7 @@ const Connection = () => {
       });
 
       peer.on("end", () => {
-        console.error('peer connection closed')
+        console.error("peer connection closed");
         setReConnect(true);
       });
 
@@ -84,15 +85,13 @@ const Connection = () => {
   useEffect(() => {
     // connect to socket server
     const connection = socketConnection();
-
-    // establish peer connection
+    console.log(connection);
 
     let peer;
-    (async ()=>{
-      peer = await establishPeerConnection(connection)
-      console.log(peer)
-      
-    })()
+    (async () => {
+      peer = await establishPeerConnection(connection);
+      console.log(peer);
+    })();
 
     return () => {
       connection.close();
@@ -100,30 +99,25 @@ const Connection = () => {
     };
   }, []);
 
-  const handleIceCandidate = (iceCandidate) => {
-    console.log(iceCandidate);
-    peer.signal(iceCandidate);
+  const handleIceCandidate = (iceCandidates) => {
+    console.log(iceCandidates);
+    peer.signal(iceCandidates);
   };
 
-  const handleSocketId = (socketId) => {
-    console.log(socketId);
-    setSocketId(socketId);
-  };
-
-  const handleIceCandidatesList = (iceCandidates) => {
-    console.log(iceCandidates, socketId);
-    setremoteStream(null)
+  const handle_disconnected_candidate = (iceCandidates) => {
+    console.log(iceCandidates);
+    setremoteStreams([]);
     setReConnect(true);
   };
 
   useEffect(() => {
     if (peer) {
       socket.on("iceCandidate", handleIceCandidate);
-      socket.on("iceCandidatesList", handleIceCandidatesList);
+      socket.on("candidate disconnected", handle_disconnected_candidate);
 
       return () => {
         socket.off("iceCandidate", handleIceCandidate);
-        socket.off("iceCandidatesList", handleIceCandidatesList);
+        socket.off("candidate disconnected", handle_disconnected_candidate);
       };
     }
   }, [peer]);
@@ -145,6 +139,7 @@ const Connection = () => {
     }
   }, [reConnect]);
 
+  console.log(remoteStreams);
   return (
     <>
       <div style={{ display: "flex", justifyContent: "center", gap: "3rem" }}>
@@ -162,15 +157,19 @@ const Connection = () => {
         </div>
         <div>
           <h3>Remote streams</h3>
-          {remoteStream && (
-            <ReactPlayer
-              playing
-              muted
-              height="300px"
-              width="500px"
-              url={remoteStream}
-            />
-          )}
+          {remoteStreams?.map((stream) => {
+            return (
+              <div key={stream.id}>
+                <ReactPlayer
+                  playing
+                  muted
+                  height="300px"
+                  width="500px"
+                  url={stream}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
     </>
