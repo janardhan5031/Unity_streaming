@@ -1,141 +1,179 @@
-import React, { useEffect, useRef, useState } from "react";
-import io from "socket.io-client";
-import Peer from "simple-peer";
-import styled from "styled-components";
+import { useEffect, useState } from "react";
+import ReactPlayer from "react-player";
+import SimplePeer from "simple-peer";
+import { io } from "socket.io-client";
 
-const Container = styled.div`
-  padding: 20px;
-  display: flex;
-  height: 100vh;
-  width: 90%;
-  margin: auto;
-  flex-wrap: wrap;
-`;
+const Connection = () => {
+  const [mystream, setMyStream] = useState(null);
+  const [remoteStream, setremoteStream] = useState(null);
+  const [peer, setPeer] = useState(null);
+  const [socket, setSocket] = useState(null);
+  const [socketId, setSocketId] = useState(null);
+  const [reConnect, setReConnect] = useState(false);
 
-const StyledVideo = styled.video`
-  height: 40%;
-  width: 50%;
-`;
+  const socketConnection = () => {
+    const connection = io("http://localhost:4000/p2e");
+    // connect to socket server
+    connection.on("connect", () => {
+      console.log("client connected to socket server");
+    });
 
-const Video = (props) => {
-  const ref = useRef();
+    connection.on("disconnect", () => {
+      console.log("client disconnected from socket server");
+      setReConnect(true);
+    });
+
+    setSocket(connection);
+    return connection;
+  };
+
+  const establishPeerConnection = async (socket) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: true,
+      });
+
+      const peer = new SimplePeer({
+        initiator: true,
+        stream,
+        trickle: false,
+      });
+
+      // console.log(peer,'====> peer conneciton =====');
+      // peer.destroyed=true;
+      // console.log(peer,'====> peer conneciton =====');
+
+
+      peer.on("signal", (offer) => {
+        console.log(offer);
+        console.log(socket);
+        socket.emit("offer", offer);
+      });
+
+      peer.on("stream", (stream) => {
+        console.log(stream);
+        setremoteStream(stream);
+      });
+
+      peer.on("close", () => {
+        console.error("Peer connection closed");
+        setReConnect(true);
+      });
+
+      peer.on("end", () => {
+        console.error('peer connection closed')
+        setReConnect(true);
+      });
+
+      peer.on("error", (error) => {
+        console.error("Peer connection error:");
+        setReConnect(true);
+      });
+
+      setPeer(peer);
+      setMyStream(stream);
+      return peer;
+    } catch (error) {
+      console.log("Error accessing media devices:", error);
+      setReConnect(true);
+    }
+  };
 
   useEffect(() => {
-    props.peer.on("stream", (stream) => {
-      ref.current.srcObject = stream;
-    });
+    // connect to socket server
+    const connection = socketConnection();
+
+    // establish peer connection
+
+    let peer;
+    (async ()=>{
+      peer = await establishPeerConnection(connection)
+      console.log(peer)
+      
+    })()
+
+    return () => {
+      connection.close();
+      peer.destroyed = true;
+    };
   }, []);
 
-  return <StyledVideo playsInline autoPlay ref={ref} />;
-};
+  const handleIceCandidate = (iceCandidate) => {
+    console.log(iceCandidate);
+    peer.signal(iceCandidate);
+  };
 
-const videoConstraints = {
-  height: window.innerHeight / 2,
-  width: window.innerWidth / 2,
-};
+  const handleSocketId = (socketId) => {
+    console.log(socketId);
+    setSocketId(socketId);
+  };
 
-const Room = (props) => {
-  const [peers, setPeers] = useState([]);
-  const socketRef = useRef();
-  const userVideo = useRef();
-  const peersRef = useRef([]);
-  const roomID = 1111;
+  const handleIceCandidatesList = (iceCandidates) => {
+    console.log(iceCandidates, socketId);
+    setremoteStream(null)
+    setReConnect(true);
+  };
 
   useEffect(() => {
-    socketRef.current = io.connect("http://localhost:8000/");
-    navigator.mediaDevices
-      .getUserMedia({ video: videoConstraints, audio: true })
-      .then((stream) => {
-        userVideo.current.srcObject = stream;
-        socketRef.current.emit("join room", roomID);
-        socketRef.current.on("all users", (users) => {
-          const peers = [];
-          users.forEach((userID) => {
-            const peer = createPeer(userID, socketRef.current.id, stream);
-            peersRef.current.push({
-              peerID: userID,
-              peer,
-            });
-            peers.push(peer);
-          });
-          setPeers(peers);
-        });
+    if (peer) {
+      socket.on("iceCandidate", handleIceCandidate);
+      socket.on("iceCandidatesList", handleIceCandidatesList);
 
-        socketRef.current.on("user joined", (payload) => {
-          const peer = addPeer(payload.signal, payload.callerID, stream);
-          peersRef.current.push({
-            peerID: payload.callerID,
-            peer,
-          });
+      return () => {
+        socket.off("iceCandidate", handleIceCandidate);
+        socket.off("iceCandidatesList", handleIceCandidatesList);
+      };
+    }
+  }, [peer]);
 
-          setPeers((users) => [...users, peer]);
-        });
-
-        socketRef.current.on("receiving returned signal", (payload) => {
-          const item = peersRef.current.find((p) => p.peerID === payload.id);
-          item.peer.signal(payload.signal);
-        });
-
-        socketRef.current.on('disconnect peer',(callerID)=>{
-          const disconnectedPeer = peersRef.current.find((p) => p.peerID ===callerID);
-          console.log(disconnectedPeer.peer,'=====')
-          // disconnectedPeer.peer.destroy();
-          const latestPeerRefs = peersRef.current.filter((P)=>{
-            P.peerID !== callerID
-          }) 
-          console.log(latestPeerRefs)
-          peersRef.current = latestPeerRefs;
-          setPeers((peers)=>{
-            const latest = peers.filter((p)=>p.peerID !== callerID);
-            console.log(latest,'=====>')
-            return latest
-          })
+  useEffect(() => {
+    if (reConnect) {
+      peer.destroyed = true;
+      console.log("Peer connection destroyed");
+      establishPeerConnection(socket)
+        .then((newPeer) => {
+          console.log("Peer connection re-established");
+          setPeer(newPeer);
+          setReConnect(false);
         })
-      });
-  }, []);
-
-  function createPeer(userToSignal, callerID, stream) {
-    const peer = new Peer({
-      initiator: true,
-      trickle: false,
-      stream,
-    });
-
-    peer.on("signal", (signal) => {
-      socketRef.current.emit("sending signal", {
-        userToSignal,
-        callerID,
-        signal,
-      });
-    });
-
-    return peer;
-  }
-
-  function addPeer(incomingSignal, callerID, stream) {
-    const peer = new Peer({
-      initiator: false,
-      trickle: false,
-      stream,
-    });
-
-    peer.on("signal", (signal) => {
-      socketRef.current.emit("returning signal", { signal, callerID });
-    });
-
-    peer.signal(incomingSignal);
-
-    return peer;
-  }
+        .catch((error) => {
+          console.log("Error re-establishing peer connection:", error);
+          setReConnect(false);
+        });
+    }
+  }, [reConnect]);
 
   return (
-    <Container>
-      <StyledVideo muted ref={userVideo} autoPlay playsInline />
-      {peers.map((peer, index) => {
-        return <Video key={index} peer={peer} />;
-      })}
-    </Container>
+    <>
+      <div style={{ display: "flex", justifyContent: "center", gap: "3rem" }}>
+        <div>
+          <h3>MY Stream</h3>
+          {mystream && (
+            <ReactPlayer
+              playing
+              muted
+              height="300px"
+              width="500px"
+              url={mystream}
+            />
+          )}
+        </div>
+        <div>
+          <h3>Remote streams</h3>
+          {remoteStream && (
+            <ReactPlayer
+              playing
+              muted
+              height="300px"
+              width="500px"
+              url={remoteStream}
+            />
+          )}
+        </div>
+      </div>
+    </>
   );
 };
 
-export default Room;
+export default Connection;
