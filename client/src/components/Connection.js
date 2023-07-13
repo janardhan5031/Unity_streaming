@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import ReactPlayer from "react-player";
 import SimplePeer from "simple-peer";
 import { io } from "socket.io-client";
@@ -9,41 +9,45 @@ const Connection = () => {
   const [peer, setPeer] = useState(null);
   const [socket, setSocket] = useState(null);
   const [socketId, setSocketId] = useState(null);
+  const [reConnect, setReConnect] = useState(false);
 
-  useEffect(() => {
+  const socketConnection = () => {
     const connection = io("http://localhost:4000/p2e");
     // connect to socket server
     connection.on("connect", () => {
       console.log("client connected to socket server");
-      setSocket(connection);
     });
 
-    // connection.on('socketId',socketId=>setSocket(socketId));
-
-    return () => {
-      connection.disconnect();
-      peer.destroy();
-    };
-  }, []);
-
-  const callOnClickHandler = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: true,
+    connection.on("disconnect", () => {
+      console.log("client disconnected from socket server");
+      setReConnect(true);
     });
-    setMyStream(stream);
+
+    setSocket(connection);
+    return connection;
   };
 
-  useEffect(() => {
-    if (mystream) {
+  const establishPeerConnection = async (socket) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: true,
+      });
+
       const peer = new SimplePeer({
         initiator: true,
-        stream: mystream,
+        stream,
         trickle: false,
       });
 
+      // console.log(peer,'====> peer conneciton =====');
+      // peer.destroyed=true;
+      // console.log(peer,'====> peer conneciton =====');
+
+
       peer.on("signal", (offer) => {
         console.log(offer);
+        console.log(socket);
         socket.emit("offer", offer);
       });
 
@@ -53,20 +57,47 @@ const Connection = () => {
       });
 
       peer.on("close", () => {
-        window.alert("Peer connection closed");
+        console.error("Peer connection closed");
+        setReConnect(true);
       });
 
-      peer.on("error", (message) => {
-        console.log(message);
-        peer.removeStream(mystream);
+      peer.on("end", () => {
+        console.error('peer connection closed')
+        setReConnect(true);
+      });
+
+      peer.on("error", (error) => {
+        console.error("Peer connection error:");
+        setReConnect(true);
       });
 
       setPeer(peer);
-      return () => {
-        peer.destroy(["Close"]);
-      };
+      setMyStream(stream);
+      return peer;
+    } catch (error) {
+      console.log("Error accessing media devices:", error);
+      setReConnect(true);
     }
-  }, [mystream]);
+  };
+
+  useEffect(() => {
+    // connect to socket server
+    const connection = socketConnection();
+
+    // establish peer connection
+
+    let peer;
+    (async ()=>{
+      peer = await establishPeerConnection(connection)
+      console.log(peer)
+      
+    })()
+
+    return () => {
+      connection.close();
+      peer.destroyed = true;
+    };
+  }, []);
 
   const handleIceCandidate = (iceCandidate) => {
     console.log(iceCandidate);
@@ -80,14 +111,9 @@ const Connection = () => {
 
   const handleIceCandidatesList = (iceCandidates) => {
     console.log(iceCandidates, socketId);
-    Object.keys(iceCandidates).forEach((key) => {
-      if (key !== socketId) {
-        peer.signal(iceCandidates[key]);
-      }
-    });
+    setremoteStream(null)
+    setReConnect(true);
   };
-
-
 
   useEffect(() => {
     if (peer) {
@@ -99,18 +125,27 @@ const Connection = () => {
         socket.off("iceCandidatesList", handleIceCandidatesList);
       };
     }
-  }, [
-    peer,
-    socket,
-    handleIceCandidate,
-    handleIceCandidatesList,
-  ]);
+  }, [peer]);
 
-  console.log(socketId);
+  useEffect(() => {
+    if (reConnect) {
+      peer.destroyed = true;
+      console.log("Peer connection destroyed");
+      establishPeerConnection(socket)
+        .then((newPeer) => {
+          console.log("Peer connection re-established");
+          setPeer(newPeer);
+          setReConnect(false);
+        })
+        .catch((error) => {
+          console.log("Error re-establishing peer connection:", error);
+          setReConnect(false);
+        });
+    }
+  }, [reConnect]);
 
   return (
     <>
-      <button onClick={callOnClickHandler}>call</button>
       <div style={{ display: "flex", justifyContent: "center", gap: "3rem" }}>
         <div>
           <h3>MY Stream</h3>
