@@ -45,14 +45,24 @@ const io = socket_io(server, {
 const room1 = io.of("/p2e");
 
 const offers = {};
+let admin, admin_offer; 
 
 room1.on("connection", (socket) => {
   console.log('client connected ==> ',socket.id);
+  console.log(socket.handshake.auth.userType)
   
-  socket.on('offer',offer=>{
-    // console.log(users)
-    offers[socket.id] = offer;
-    socket.broadcast.emit('iceCandidate',offer)
+  socket.on('send admin_offer',offer=>{
+    // check if the user is admin, send his connection offer to all 
+    // users in the room connected/ connecting ...
+    // const userType = socket.handshake.auth.userType
+    // if( userType === 'admin'){
+    //   admin = userType ; 
+    //   admin_offer =offer
+    // }else{
+      
+    // }
+    
+    socket.broadcast.emit('recieve admin_offer',offer)
 
   })
 
